@@ -1,0 +1,83 @@
+
+library(RSQLite)
+
+#conectar ao BD
+conn = dbConnect(dbDriver("SQLite"),"carteira.sqlite")
+conn
+
+dados = data.frame(
+  data = as.Date(c("2018-12-07","2018-12-07","2018-12-07","2018-12-07")),
+  papel = c("LTN","LTN","LTN","LTN"),
+  vencimento = as.Date(c("2019-01-01","2020-01-01","2021-01-01","2022-01-01")),
+  quantidade = c(100L,200L,300L,400L),
+  preco = c(978.3,930.2,898.3,853.4),
+  stringsAsFactors = F
+  )
+
+#insert de DE-PARA
+#nao necessariamente tera os mesmos nomes. esse caso foi um exemplo
+  "INSERT INTO Estoque"
+  " (data, papel, vencimento, quantidade, preco)" #nomes das colunas do BD
+  "VALUES"
+  "(:data,:papel,:vencimento,:quantidade,:preco)" #nomes das colunas do df - importante ter o :
+  
+  sql = paste0("INSERT INTO Estoque ",
+               " (data, papel, vencimento, quantidade, preco) ",
+               "VALUES",
+               "(:data,:papel,:vencimento,:quantidade,:preco)"
+               )
+
+  r = dbSendQuery(conn, sql, params = dados)
+  dbClearResult(r)
+  
+  #as datas foram formatadas como inteiros para o banco,
+  #entao vamos formatar como strinf antes de enviar
+  dados$data = format(dados$data,"%Y-%m-%d")
+  dados$vencimento = format(dados$vencimento,"%Y-%m-%d")
+  
+dbExecute(conn, "DELETE FROM Estoque WHERE data = 17872")
+
+sql = paste0("INSERT INTO Estoque ",
+             " (data, papel, vencimento, quantidade, preco) ",
+             "VALUES",
+             "(:data,:papel,:vencimento,:quantidade,:preco)"
+)
+
+r = dbSendQuery(conn, sql, params = dados)
+dbClearResult(r)
+dbExecute(conn, "DELETE FROM Estoque WHERE data = '2018-12-07'")
+#TRANSACOES sao tudo ou nada para evitar gravacoes incompletas
+#no banco de dados
+#comecamos as transacoes com BEGIN
+#e finalizamos com COMMIT
+#se alguma coisa deu errado no meio do caminho podemos
+#dar um ROLLBACK e voltar o bancos de dados ao seu
+#estado antes do BEGIN
+
+dados$papel[3]= NA
+
+dbBegin(conn)
+r = dbSendQuery(conn, sql, params = dados)
+dbRollback(conn)
+
+#podemos testar se algo deu errado com o comando try()
+r = try(dbSendQuery(conn, sql, params = dados))
+#se nao executou com sucesso, a variavel r
+##vai receber um objeto do tipo
+#"try-error" com os dados do erro
+str(r)
+
+dbBegin(conn)
+r = try(dbSendQuery(conn, sql, params = dados))
+if(is(r,"try-error")){
+  print("ocorreu um erro. Executando rollback...")
+  cat(r)
+  dbRollback(conn)
+}else{
+  dbCommit(conn)
+  print("dados inseridos com sucesso")
+}
+
+dados$papel[3]= "LTN" #consertar o df e reexecutar o bloco acima
+
+dbDisconnect(conn)
